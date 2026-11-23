@@ -5,6 +5,7 @@
 #          3) add them to the project board (optional, -ProjectNumber)
 # Input:   -Repo OWNER/REPO (e.g. BUDI1124/group2-hdb-resale)
 #          -ProjectNumber   board number from: gh project list --owner BUDI1124
+#          -StartAt         skip stories before this number (resume after an error)
 #          Requires gh logged in (gh auth status); board step needs: gh auth refresh -s project
 # Output:  labels, milestones "Sprint 1/2/3", 18 issues, optional board items
 # Run in:  PowerShell, inside your conda env:
@@ -14,7 +15,8 @@
 # =====================================================================
 param(
     [Parameter(Mandatory = $true)][string]$Repo,
-    [int]$ProjectNumber = 0
+    [int]$ProjectNumber = 0,
+    [int]$StartAt = 1
 )
 $Owner = $Repo.Split('/')[0]
 
@@ -34,14 +36,20 @@ gh api "repos/$Repo/milestones" -f title=$S2 -f due_on='2026-12-06T15:59:59Z' -f
 gh api "repos/$Repo/milestones" -f title=$S3 -f due_on='2026-12-13T15:59:59Z' -f description='Power BI report, checklist and slides for 14 Dec' | Out-Null
 
 # --- Helper: one user story = one issue ---
-$created = @()
+# The body is written to a temp UTF-8 file and passed with --body-file, because
+# Windows PowerShell breaks quotes inside long arguments sent to gh.
+$script:n = 0
+$tmp = Join-Path $env:TEMP 'hdb_issue_body.md'
+$utf8 = New-Object System.Text.UTF8Encoding $false
 function New-Story([string]$Title, [string]$Labels, [int]$Points, [string]$Role, [string]$Milestone, [string]$Story, [string[]]$Criteria) {
+    $script:n++
+    if ($script:n -lt $StartAt) { return }                               # already created earlier
     $checks = ($Criteria | ForEach-Object { "- [ ] $_" }) -join "`n"
     $body = "**User story**`n$Story`n`n**Story points:** $Points`n**Role:** $Role`n`n**Acceptance criteria**`n$checks"
-    $url = gh issue create --repo $Repo --title $Title --label $Labels --milestone $Milestone --body $body
-    if ($LASTEXITCODE -ne 0) { throw "Failed to create issue: $Title" }   # stop on error
-    Write-Host $url
-    $script:created += $url
+    [System.IO.File]::WriteAllText($tmp, $body, $utf8)
+    $url = gh issue create --repo $Repo --title $Title --label $Labels --milestone $Milestone --body-file $tmp
+    if ($LASTEXITCODE -ne 0) { throw "Failed at story $($script:n): $Title (re-run with -StartAt $($script:n))" }
+    Write-Host "$($script:n). $url"
 }
 
 # --- 3. HDB product backlog (order = priority) ---
@@ -74,7 +82,7 @@ New-Story 'Handle missing values and duplicates with rationale' 'clean' 2 'Data 
   @('Missing values counted per column, decision written for each', 'Duplicates flagged or removed, count reported')
 New-Story 'Standardise dates (ISO 8601) and normalise strings' 'clean' 3 'Data Engineer' $S2 `
   'As an analyst, I want ISO dates and normalised strings so that fields can be grouped and calculated.' `
-  @('month converted to YYYY-MM-DD', 'Town, flat type and model: stripped and consistent casing', 'remaining_lease "61 years 04 months" parsed to years (float)', 'storey_range parsed to low / high / mid floor')
+  @('month converted to YYYY-MM-DD', 'Town, flat type and model: stripped and consistent casing', 'remaining_lease text such as 61 years 04 months parsed to years (float)', 'storey_range parsed to low / high / mid floor')
 New-Story 'Create derived metrics (price/sqm, YoY growth, rolling median, rank)' 'clean' 3 'Data Analyst' $S2 `
   'As an analyst, I want derived metrics so that the business questions can be answered.' `
   @('price_per_sqm, lease band, storey band columns', 'YoY % growth and 12-month rolling median by town', 'Town rank by growth')
@@ -105,11 +113,13 @@ New-Story 'Findings, Deliverables Checklist and presentation slides' 'report' 3 
   'As a team, we want findings, the checklist and slides ready so that we can present on 14 Dec.' `
   @('3-5 recommendations linked to findings', 'Deliverables Checklist filled in', 'Slides with speaker notes; every member presents a section')
 
-# --- 4. Add the new issues to the project board (optional) ---
+# --- 4. Add all open issues to the project board (optional; an issue already on the board is not duplicated) ---
 if ($ProjectNumber -gt 0) {
-    foreach ($u in $created) {
+    $urls = gh issue list --repo $Repo --state open --limit 200 --json url --jq '.[].url'
+    foreach ($u in $urls) {
         gh project item-add $ProjectNumber --owner $Owner --url $u | Out-Null
     }
-    Write-Host "Added $($created.Count) issues to project $ProjectNumber"
+    Write-Host "Added $(@($urls).Count) issues to project $ProjectNumber"
 }
-Write-Host "Done: $($created.Count) HDB stories created."
+Remove-Item $tmp -ErrorAction SilentlyContinue
+Write-Host "Done: stories $StartAt to $($script:n) processed."
