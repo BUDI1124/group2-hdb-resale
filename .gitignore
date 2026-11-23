@@ -1,0 +1,25 @@
+# Secrets - never commit API keys
+.env
+*.env
+kaggle.json
+
+# Data - recreate with notebooks/00_get_data.ipynb (keeps the repo small)
+data/raw/*
+data/clean/*
+!data/raw/.gitkeep
+!data/clean/.gitkeep
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Power BI temp
+*.pbix.bak
