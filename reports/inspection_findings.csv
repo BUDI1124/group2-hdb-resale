@@ -1,0 +1,8 @@
+column,issue,rows,pct,planned_fix_in_02_clean
+DUP_COLS,"Identical sale records (same details, different _id)",635,0.26,"Flag, keep (can be separate real sales)"
+"resale_price, floor_area_sqm, lease_commence_date",Numbers delivered as text,245351,100.0,pd.to_numeric
+floor_area_sqm,Outside expected range 20-300,1,0.0,"Flag, keep for review"
+month,"Text YYYY-MM, not a date",245351,100.0,Convert to ISO 8601 date (first of month) + quarter
+remaining_lease,Text such as 61 years 04 months,245351,100.0,Parse to years (float)
+storey_range,Text range such as 10 TO 12,245351,100.0,Split to low / high / mid floor
+rpi coverage,Transactions after last index quarter (2026-Q3),3657,1.49,"Keep; rpi_index blank, report"
